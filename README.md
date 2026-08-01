@@ -1,8 +1,8 @@
 # Code Review Assistant
 
-A small, deterministic C# command-line tool that reviews C# source code locally. It does not send source code to an AI service.
+A small, deterministic C# command-line tool that reviews C# source code locally. It uses Roslyn syntax trees and semantic models and does not send source code to an AI service.
 
-The initial version detects:
+The analyzer detects:
 
 - methods longer than 50 lines (`CRA001`);
 - unclear one- or two-character local variable names (`CRA002`);
@@ -29,7 +29,7 @@ dotnet run --project src/CodeReviewAssistant -- src
 
 ## Tests
 
-The first commit avoids external test-framework packages, so the smoke-test project can run in an offline environment:
+The smoke-test project avoids an external test framework and can be run directly:
 
 ```bash
 dotnet run --project tests/CodeReviewAssistant.Tests
@@ -37,4 +37,4 @@ dotnet run --project tests/CodeReviewAssistant.Tests
 
 ## Current scope
 
-This is an intentionally small foundation. Its syntax recognition is heuristic and currently targets ordinary C# formatting. A production version should use Roslyn syntax trees and semantic models, add configuration, and expose machine-readable output for CI integrations.
+Roslyn provides formatting-independent parsing and symbol-aware analysis. The current rules remain intentionally focused: each file is compiled independently, so analysis that requires a complete project compilation is not yet available. Future versions should add project/solution loading, configuration, and machine-readable output for CI integrations.

@@ -1,8 +1,10 @@
-using System.Text.RegularExpressions;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace CodeReviewAssistant.Analysis;
 
-public sealed partial class SourceAnalyzer
+public sealed class SourceAnalyzer
 {
     private const int LongMethodThreshold = 50;
     private static readonly HashSet<string> AllowedShortNames = new(StringComparer.Ordinal)
@@ -10,14 +12,27 @@ public sealed partial class SourceAnalyzer
         "i", "j", "k", "x", "y", "id"
     };
 
+    private static readonly Lazy<IReadOnlyList<MetadataReference>> PlatformReferences =
+        new(CreatePlatformReferences);
+
     public FileReview Review(string path, string source)
     {
-        var lines = source.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var syntaxTree = CSharpSyntaxTree.ParseText(
+            source,
+            CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest),
+            path);
+        var root = syntaxTree.GetRoot();
+        var compilation = CSharpCompilation.Create(
+            "CodeUnderReview",
+            [syntaxTree],
+            PlatformReferences.Value,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        var semanticModel = compilation.GetSemanticModel(syntaxTree);
         var findings = new List<ReviewFinding>();
 
-        FindLongMethods(lines, findings);
-        FindUnclearVariableNames(lines, findings);
-        FindDuplicateStatements(lines, findings);
+        FindLongMethods(root, syntaxTree, findings);
+        FindUnclearVariableNames(root, semanticModel, findings);
+        FindDuplicateStatements(root, syntaxTree, findings);
 
         if (findings.Count == 0)
         {
@@ -28,127 +43,156 @@ public sealed partial class SourceAnalyzer
         return new FileReview(path, findings.OrderBy(finding => finding.Line).ToArray());
     }
 
-    private static void FindLongMethods(string[] lines, ICollection<ReviewFinding> findings)
+    private static void FindLongMethods(
+        SyntaxNode root,
+        SyntaxTree syntaxTree,
+        ICollection<ReviewFinding> findings)
     {
-        for (var index = 0; index < lines.Length; index++)
+        foreach (var method in root.DescendantNodes().OfType<BaseMethodDeclarationSyntax>())
         {
-            var match = MethodDeclaration().Match(StripLineComment(lines[index]));
-            if (!match.Success)
+            if (method.Body is null)
             {
                 continue;
             }
 
-            var openingLine = FindOpeningBrace(lines, index);
-            if (openingLine < 0)
-            {
-                continue;
-            }
+            AddLongMethodFinding(
+                method.Body,
+                method switch
+                {
+                    MethodDeclarationSyntax declaration => declaration.Identifier.ValueText,
+                    ConstructorDeclarationSyntax declaration => declaration.Identifier.ValueText,
+                    DestructorDeclarationSyntax declaration => $"~{declaration.Identifier.ValueText}",
+                    OperatorDeclarationSyntax declaration => $"operator {declaration.OperatorToken.ValueText}",
+                    ConversionOperatorDeclarationSyntax declaration => $"operator {declaration.Type}",
+                    _ => "member"
+                },
+                syntaxTree,
+                findings);
+        }
 
-            var endLine = FindClosingBrace(lines, openingLine);
-            if (endLine < 0)
+        foreach (var function in root.DescendantNodes().OfType<LocalFunctionStatementSyntax>())
+        {
+            if (function.Body is not null)
             {
-                continue;
+                AddLongMethodFinding(function.Body, function.Identifier.ValueText, syntaxTree, findings);
             }
-
-            var length = endLine - openingLine + 1;
-            if (length > LongMethodThreshold)
-            {
-                findings.Add(new ReviewFinding(
-                    "CRA001",
-                    FindingSeverity.Warning,
-                    $"Method {match.Groups[1].Value}() is {length} lines long (limit: {LongMethodThreshold})",
-                    index + 1,
-                    10));
-            }
-
-            index = endLine;
         }
     }
 
-    private static void FindUnclearVariableNames(string[] lines, ICollection<ReviewFinding> findings)
+    private static void AddLongMethodFinding(
+        BlockSyntax body,
+        string name,
+        SyntaxTree syntaxTree,
+        ICollection<ReviewFinding> findings)
     {
-        for (var index = 0; index < lines.Length; index++)
+        var lineSpan = syntaxTree.GetLineSpan(body.Span);
+        var length = lineSpan.EndLinePosition.Line - lineSpan.StartLinePosition.Line + 1;
+        if (length <= LongMethodThreshold)
         {
-            foreach (Match match in LocalDeclaration().Matches(StripLineComment(lines[index])))
+            return;
+        }
+
+        findings.Add(new ReviewFinding(
+            "CRA001",
+            FindingSeverity.Warning,
+            $"Method {name}() is {length} lines long (limit: {LongMethodThreshold})",
+            GetLine(syntaxTree, body),
+            10));
+    }
+
+    private static void FindUnclearVariableNames(
+        SyntaxNode root,
+        SemanticModel semanticModel,
+        ICollection<ReviewFinding> findings)
+    {
+        foreach (var declarator in root.DescendantNodes().OfType<VariableDeclaratorSyntax>())
+        {
+            var symbol = semanticModel.GetDeclaredSymbol(declarator);
+            if (symbol is not ILocalSymbol ||
+                symbol.Name.Length > 2 ||
+                AllowedShortNames.Contains(symbol.Name))
             {
-                var name = match.Groups[1].Value;
-                if (name.Length <= 2 && !AllowedShortNames.Contains(name))
+                continue;
+            }
+
+            findings.Add(new ReviewFinding(
+                "CRA002",
+                FindingSeverity.Warning,
+                $"Variable '{symbol.Name}' could have a clearer name",
+                GetLine(declarator.SyntaxTree, declarator),
+                4));
+        }
+    }
+
+    private static void FindDuplicateStatements(
+        SyntaxNode root,
+        SyntaxTree syntaxTree,
+        ICollection<ReviewFinding> findings)
+    {
+        var executableBodies = root.DescendantNodes()
+            .Where(node => node is BaseMethodDeclarationSyntax or LocalFunctionStatementSyntax or AccessorDeclarationSyntax)
+            .Select(GetBody)
+            .Where(body => body is not null)
+            .Cast<BlockSyntax>();
+
+        foreach (var body in executableBodies)
+        {
+            var firstOccurrence = new Dictionary<string, int>(StringComparer.Ordinal);
+            var reported = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var statement in body.DescendantNodes()
+                         .OfType<StatementSyntax>()
+                         .Where(IsDuplicateCandidate))
+            {
+                var normalized = statement.WithoutTrivia().NormalizeWhitespace().ToFullString();
+                if (normalized.Length < 12)
+                {
+                    continue;
+                }
+
+                var line = GetLine(syntaxTree, statement);
+                if (firstOccurrence.TryGetValue(normalized, out var firstLine) && reported.Add(normalized))
                 {
                     findings.Add(new ReviewFinding(
-                        "CRA002", FindingSeverity.Warning,
-                        $"Variable '{name}' could have a clearer name", index + 1, 4));
+                        "CRA003",
+                        FindingSeverity.Warning,
+                        $"Duplicate statement also appears on line {firstLine}",
+                        line,
+                        6));
+                }
+                else
+                {
+                    firstOccurrence.TryAdd(normalized, line);
                 }
             }
         }
     }
 
-    private static void FindDuplicateStatements(string[] lines, ICollection<ReviewFinding> findings)
+    private static BlockSyntax? GetBody(SyntaxNode node) => node switch
     {
-        var firstOccurrence = new Dictionary<string, int>(StringComparer.Ordinal);
-        var reported = new HashSet<string>(StringComparer.Ordinal);
+        BaseMethodDeclarationSyntax method => method.Body,
+        LocalFunctionStatementSyntax function => function.Body,
+        AccessorDeclarationSyntax accessor => accessor.Body,
+        _ => null
+    };
 
-        for (var index = 0; index < lines.Length; index++)
-        {
-            var statement = StripLineComment(lines[index]).Trim();
-            if (statement.Length < 12 ||
-                !statement.EndsWith(';') ||
-                statement.StartsWith("using ") ||
-                statement.StartsWith("return ") ||
-                statement.StartsWith("yield return ") ||
-                statement is "yield break;" or "break;" or "continue;")
-            {
-                continue;
-            }
+    private static bool IsDuplicateCandidate(StatementSyntax statement) =>
+        statement is ExpressionStatementSyntax or LocalDeclarationStatementSyntax;
 
-            if (firstOccurrence.TryGetValue(statement, out var firstLine) && reported.Add(statement))
-            {
-                findings.Add(new ReviewFinding(
-                    "CRA003", FindingSeverity.Warning,
-                    $"Duplicate statement also appears on line {firstLine}", index + 1, 6));
-            }
-            else
-            {
-                firstOccurrence.TryAdd(statement, index + 1);
-            }
-        }
-    }
+    private static int GetLine(SyntaxTree tree, SyntaxNode node) =>
+        tree.GetLineSpan(node.Span).StartLinePosition.Line + 1;
 
-    private static int FindOpeningBrace(string[] lines, int start)
+    private static IReadOnlyList<MetadataReference> CreatePlatformReferences()
     {
-        for (var index = start; index < Math.Min(lines.Length, start + 5); index++)
+        var trustedAssemblies = AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string;
+        if (string.IsNullOrWhiteSpace(trustedAssemblies))
         {
-            if (lines[index].Contains('{')) return index;
-            if (lines[index].Contains(';')) return -1;
+            return [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)];
         }
 
-        return -1;
+        return trustedAssemblies
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Select(path => MetadataReference.CreateFromFile(path))
+            .ToArray();
     }
-
-    private static int FindClosingBrace(string[] lines, int start)
-    {
-        var depth = 0;
-        for (var index = start; index < lines.Length; index++)
-        {
-            var line = StripStringsAndComments(lines[index]);
-            depth += line.Count(character => character == '{');
-            depth -= line.Count(character => character == '}');
-            if (depth == 0) return index;
-        }
-
-        return -1;
-    }
-
-    private static string StripLineComment(string line) => line.Split("//", 2)[0];
-
-    private static string StripStringsAndComments(string line) =>
-        StringLiteral().Replace(StripLineComment(line), "\"\"");
-
-    [GeneratedRegex(@"^\s*(?:(?:public|private|protected|internal|static|virtual|override|async|sealed|new|partial|unsafe|extern)\s+)*(?:[\w<>,.?\[\]]+\s+)+(\w+)\s*\([^;]*\)\s*(?:where\b.*)?(?:\{|$)")]
-    private static partial Regex MethodDeclaration();
-
-    [GeneratedRegex(@"\b(?:var|bool|byte|char|decimal|double|float|int|long|object|sbyte|short|string|uint|ulong|ushort)\s+([A-Za-z_]\w*)\s*(?:=|;|,)")]
-    private static partial Regex LocalDeclaration();
-
-    [GeneratedRegex("\"(?:\\\\.|[^\"\\\\])*\"")]
-    private static partial Regex StringLiteral();
 }

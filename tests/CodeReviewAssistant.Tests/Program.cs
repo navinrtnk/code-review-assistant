@@ -21,14 +21,25 @@ Run("clean source receives full score", () =>
     Expect(review.Findings.Single().RuleId == "CRA000", "Expected the clean-code finding");
 });
 
-Run("unclear variable names are reported", () =>
+Run("semantic model limits short-name findings to local symbols", () =>
 {
-    const string source = "class Example { void Run() { var q = 42; } }";
+    const string source = """
+        class Example
+        {
+            private int db;
+            void Run()
+            {
+                var q = db;
+            }
+        }
+        """;
     var review = analyzer.Review("Example.cs", source);
-    Expect(review.Findings.Any(finding => finding.RuleId == "CRA002"), "CRA002 was not reported");
+    var findings = review.Findings.Where(finding => finding.RuleId == "CRA002").ToArray();
+    Expect(findings.Length == 1, $"Expected one CRA002, got {findings.Length}");
+    Expect(findings[0].Message.Contains("'q'", StringComparison.Ordinal), "Expected local variable q");
 });
 
-Run("duplicate statements are reported once", () =>
+Run("duplicate statements are normalized and reported once", () =>
 {
     const string source = """
         class Example
@@ -36,7 +47,7 @@ Run("duplicate statements are reported once", () =>
             void Run()
             {
                 Console.WriteLine("repeated");
-                Console.WriteLine("repeated");
+                Console . WriteLine( "repeated" ); // trivia should not matter
                 Console.WriteLine("repeated");
             }
         }
@@ -45,13 +56,50 @@ Run("duplicate statements are reported once", () =>
     Expect(review.Findings.Count(finding => finding.RuleId == "CRA003") == 1, "Expected one CRA003");
 });
 
+Run("duplicates in separate methods are independent", () =>
+{
+    const string source = """
+        class Example
+        {
+            void First() { Console.WriteLine("same"); }
+            void Second() { Console.WriteLine("same"); }
+        }
+        """;
+    var review = analyzer.Review("Example.cs", source);
+    Expect(review.Findings.All(finding => finding.RuleId != "CRA003"), "Unexpected cross-method CRA003");
+});
+
+Run("braces in strings do not affect long-method analysis", () =>
+{
+    const string source = """
+        class Example
+        {
+            void Run()
+            {
+                var message = "}";
+                Console.WriteLine(message);
+            }
+        }
+        """;
+    var review = analyzer.Review("Example.cs", source);
+    Expect(review.Findings.All(finding => finding.RuleId != "CRA001"), "Unexpected CRA001");
+});
+
+Run("long methods are measured from syntax spans", () =>
+{
+    var statements = string.Join('\n', Enumerable.Repeat("Console.WriteLine(\"line\");", 50));
+    var source = $"class Example {{ void Run() {{\n{statements}\n}} }}";
+    var review = analyzer.Review("Example.cs", source);
+    Expect(review.Findings.Any(finding => finding.RuleId == "CRA001"), "CRA001 was not reported");
+});
+
 if (failures.Count > 0)
 {
     Console.Error.WriteLine($"{failures.Count} test(s) failed:\n- {string.Join("\n- ", failures)}");
     return 1;
 }
 
-Console.WriteLine("All 3 tests passed.");
+Console.WriteLine("All 6 tests passed.");
 return 0;
 
 void Run(string name, Action test)
@@ -64,4 +112,3 @@ static void Expect(bool condition, string message)
 {
     if (!condition) throw new InvalidOperationException(message);
 }
-
