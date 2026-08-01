@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="940" height="285" viewBox="0 0 940 285" role="img" aria-labelledby="title description">
+  <title id="title">Clean code review output</title>
+  <desc id="description">Terminal output showing no maintainability issues and a score of 100 out of 100.</desc>
+  <rect width="940" height="285" rx="12" fill="#0d1117"/>
+  <rect width="940" height="42" rx="12" fill="#161b22"/>
+  <rect y="30" width="940" height="12" fill="#161b22"/>
+  <circle cx="24" cy="21" r="6" fill="#ff5f56"/>
+  <circle cx="44" cy="21" r="6" fill="#ffbd2e"/>
+  <circle cx="64" cy="21" r="6" fill="#27c93f"/>
+  <g fill="#c9d1d9" font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="15">
+    <text x="24" y="75"><tspan fill="#8b949e">$</tspan> dotnet run --project src/CodeReviewAssistant -- examples/CleanCalculator.cs</text>
+    <text x="24" y="112">Code Review Summary</text>
+    <text x="24" y="135">===================</text>
+    <text x="24" y="173">.../examples/CleanCalculator.cs</text>
+    <text x="42" y="201"><tspan fill="#3fb950">✓</tspan> CRA000 line 1: No maintainability issues detected</text>
+    <text x="42" y="224">Score: <tspan fill="#3fb950">100/100</tspan></text>
+    <text x="24" y="261">Overall score: <tspan fill="#3fb950">100/100</tspan></text>
+  </g>
+</svg>

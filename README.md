@@ -29,6 +29,32 @@ To review this repository:
 dotnet run --project src/CodeReviewAssistant -- src
 ```
 
+## Examples
+
+### Example 1: clean source code
+
+Run the analyzer against [`examples/CleanCalculator.cs`](examples/CleanCalculator.cs):
+
+```bash
+dotnet run --project src/CodeReviewAssistant -- examples/CleanCalculator.cs
+```
+
+The analyzer finds no maintainability issues and awards the file a score of 100:
+
+![Terminal output for a clean code review](docs/images/clean-review.svg)
+
+### Example 2: source code that needs review
+
+[`examples/NeedsReview.cs`](examples/NeedsReview.cs) contains a short local variable name and a repeated statement. Analyze it with:
+
+```bash
+dotnet run --project src/CodeReviewAssistant -- examples/NeedsReview.cs
+```
+
+Roslyn identifies both findings with their source lines and applies the corresponding score penalties:
+
+![Terminal output for a review with findings](docs/images/review-findings.svg)
+
 ## Tests
 
 The smoke-test project avoids an external test framework and can be run directly:
