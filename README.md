@@ -1,5 +1,7 @@
 # Code Review Assistant
 
+[![Tests: 6 passing](https://img.shields.io/badge/tests-6%20passing-brightgreen)](#tests)
+
 A small, deterministic C# command-line tool that reviews C# source code locally. It uses Roslyn syntax trees and semantic models and does not send source code to an AI service.
 
 The analyzer detects:
