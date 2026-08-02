@@ -1,6 +1,6 @@
 # Code Review Assistant
 
-[![Tests: 6 passing](https://img.shields.io/badge/tests-6%20passing-brightgreen)](#tests)
+[![Tests: 10 passing](https://img.shields.io/badge/tests-10%20passing-brightgreen)](#tests)
 
 A small, deterministic C# command-line tool that reviews C# source code locally. It uses Roslyn syntax trees and semantic models and does not send source code to an AI service.
 
@@ -28,6 +28,46 @@ To review this repository:
 ```bash
 dotnet run --project src/CodeReviewAssistant -- src
 ```
+
+## Configuration
+
+All rules use sensible defaults, but you can customize them with a `.codereview.json` file:
+
+```json
+{
+  "cra001": {
+    "enabled": true,
+    "maxLines": 40,
+    "penalty": 10
+  },
+  "cra002": {
+    "enabled": true,
+    "allowedNames": ["i", "j", "id"],
+    "penalty": 4
+  },
+  "cra003": {
+    "enabled": true,
+    "penalty": 6
+  }
+}
+```
+
+When no `--config` option is provided, the CLI looks for `.codereview.json` in the analyzed file or directory and then searches its parent directories. You can select a file explicitly instead:
+
+```bash
+dotnet run --project src/CodeReviewAssistant -- src --config team-rules.json
+```
+
+The repository includes a runnable example at [`examples/strict-rules.json`](examples/strict-rules.json).
+
+Configuration values:
+
+- `enabled` turns an individual rule on or off.
+- `penalty` controls how many points each finding removes from the file score.
+- `maxLines` sets the `CRA001` long-method threshold.
+- `allowedNames` replaces the default short-name allowlist used by `CRA002`.
+
+Invalid properties, negative penalties, invalid thresholds, and empty allowed names produce a clear configuration error.
 
 ## Examples
 
@@ -65,4 +105,4 @@ dotnet run --project tests/CodeReviewAssistant.Tests
 
 ## Current scope
 
-Roslyn provides formatting-independent parsing and symbol-aware analysis. The current rules remain intentionally focused: each file is compiled independently, so analysis that requires a complete project compilation is not yet available. Future versions should add project/solution loading, configuration, and machine-readable output for CI integrations.
+Roslyn provides formatting-independent parsing and symbol-aware analysis. The current rules remain intentionally focused: each file is compiled independently, so analysis that requires a complete project compilation is not yet available. Future versions should add project/solution loading and machine-readable output for CI integrations.

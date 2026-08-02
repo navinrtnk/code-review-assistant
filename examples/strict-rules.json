@@ -1,0 +1,13 @@
+{
+  "cra001": {
+    "maxLines": 20,
+    "penalty": 15
+  },
+  "cra002": {
+    "allowedNames": ["i", "j", "id"],
+    "penalty": 5
+  },
+  "cra003": {
+    "penalty": 10
+  }
+}

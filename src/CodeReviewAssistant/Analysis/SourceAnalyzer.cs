@@ -1,19 +1,22 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using CodeReviewAssistant.Configuration;
 
 namespace CodeReviewAssistant.Analysis;
 
 public sealed class SourceAnalyzer
 {
-    private const int LongMethodThreshold = 50;
-    private static readonly HashSet<string> AllowedShortNames = new(StringComparer.Ordinal)
-    {
-        "i", "j", "k", "x", "y", "id"
-    };
-
     private static readonly Lazy<IReadOnlyList<MetadataReference>> PlatformReferences =
         new(CreatePlatformReferences);
+    private readonly AnalyzerConfiguration _configuration;
+    private readonly HashSet<string> _allowedShortNames;
+
+    public SourceAnalyzer(AnalyzerConfiguration? configuration = null)
+    {
+        _configuration = configuration ?? new AnalyzerConfiguration();
+        _allowedShortNames = new HashSet<string>(_configuration.Cra002.AllowedNames, StringComparer.Ordinal);
+    }
 
     public FileReview Review(string path, string source)
     {
@@ -30,9 +33,20 @@ public sealed class SourceAnalyzer
         var semanticModel = compilation.GetSemanticModel(syntaxTree);
         var findings = new List<ReviewFinding>();
 
-        FindLongMethods(root, syntaxTree, findings);
-        FindUnclearVariableNames(root, semanticModel, findings);
-        FindDuplicateStatements(root, syntaxTree, findings);
+        if (_configuration.Cra001.Enabled)
+        {
+            FindLongMethods(root, syntaxTree, findings);
+        }
+
+        if (_configuration.Cra002.Enabled)
+        {
+            FindUnclearVariableNames(root, semanticModel, findings);
+        }
+
+        if (_configuration.Cra003.Enabled)
+        {
+            FindDuplicateStatements(root, syntaxTree, findings);
+        }
 
         if (findings.Count == 0)
         {
@@ -43,7 +57,7 @@ public sealed class SourceAnalyzer
         return new FileReview(path, findings.OrderBy(finding => finding.Line).ToArray());
     }
 
-    private static void FindLongMethods(
+    private void FindLongMethods(
         SyntaxNode root,
         SyntaxTree syntaxTree,
         ICollection<ReviewFinding> findings)
@@ -79,7 +93,7 @@ public sealed class SourceAnalyzer
         }
     }
 
-    private static void AddLongMethodFinding(
+    private void AddLongMethodFinding(
         BlockSyntax body,
         string name,
         SyntaxTree syntaxTree,
@@ -87,7 +101,7 @@ public sealed class SourceAnalyzer
     {
         var lineSpan = syntaxTree.GetLineSpan(body.Span);
         var length = lineSpan.EndLinePosition.Line - lineSpan.StartLinePosition.Line + 1;
-        if (length <= LongMethodThreshold)
+        if (length <= _configuration.Cra001.MaxLines)
         {
             return;
         }
@@ -95,12 +109,12 @@ public sealed class SourceAnalyzer
         findings.Add(new ReviewFinding(
             "CRA001",
             FindingSeverity.Warning,
-            $"Method {name}() is {length} lines long (limit: {LongMethodThreshold})",
+            $"Method {name}() is {length} lines long (limit: {_configuration.Cra001.MaxLines})",
             GetLine(syntaxTree, body),
-            10));
+            _configuration.Cra001.Penalty));
     }
 
-    private static void FindUnclearVariableNames(
+    private void FindUnclearVariableNames(
         SyntaxNode root,
         SemanticModel semanticModel,
         ICollection<ReviewFinding> findings)
@@ -110,7 +124,7 @@ public sealed class SourceAnalyzer
             var symbol = semanticModel.GetDeclaredSymbol(declarator);
             if (symbol is not ILocalSymbol ||
                 symbol.Name.Length > 2 ||
-                AllowedShortNames.Contains(symbol.Name))
+                _allowedShortNames.Contains(symbol.Name))
             {
                 continue;
             }
@@ -120,11 +134,11 @@ public sealed class SourceAnalyzer
                 FindingSeverity.Warning,
                 $"Variable '{symbol.Name}' could have a clearer name",
                 GetLine(declarator.SyntaxTree, declarator),
-                4));
+                _configuration.Cra002.Penalty));
         }
     }
 
-    private static void FindDuplicateStatements(
+    private void FindDuplicateStatements(
         SyntaxNode root,
         SyntaxTree syntaxTree,
         ICollection<ReviewFinding> findings)
@@ -158,7 +172,7 @@ public sealed class SourceAnalyzer
                         FindingSeverity.Warning,
                         $"Duplicate statement also appears on line {firstLine}",
                         line,
-                        6));
+                        _configuration.Cra003.Penalty));
                 }
                 else
                 {
