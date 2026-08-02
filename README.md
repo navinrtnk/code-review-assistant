@@ -95,6 +95,18 @@ Roslyn identifies both findings with their source lines and applies the correspo
 
 ![Terminal output for a review with findings](docs/images/review-findings.svg)
 
+### Example 3: low-scoring source code
+
+[`examples/LowScoreExample.cs`](examples/LowScoreExample.cs) keeps the code simple but intentionally uses eight unclear variable names and repeats two statements:
+
+```bash
+dotnet run --project src/CodeReviewAssistant -- examples/LowScoreExample.cs
+```
+
+The default penalties deduct 32 points for naming findings and 12 points for duplicate statements, producing a score of 56:
+
+![Terminal output for a low-scoring code review](docs/images/low-score-review.svg)
+
 ## Tests
 
 The smoke-test project avoids an external test framework and can be run directly:
