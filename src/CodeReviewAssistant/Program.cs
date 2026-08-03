@@ -1,5 +1,6 @@
 using CodeReviewAssistant.Analysis;
 using CodeReviewAssistant.Configuration;
+using CodeReviewAssistant.Input;
 using CodeReviewAssistant.Reporting;
 
 if (!TryParseArguments(args, out var targetArgument, out var configArgument))
@@ -8,12 +9,31 @@ if (!TryParseArguments(args, out var targetArgument, out var configArgument))
     return args.Length == 1 && args[0] is "--help" or "-h" ? 0 : 2;
 }
 
-var path = Path.GetFullPath(targetArgument);
-var files = SourceFileDiscovery.Find(path).ToArray();
+var input = InputTargetDetector.Detect(targetArgument);
+
+if (input.Kind == InputTargetKind.Missing)
+{
+    Console.Error.WriteLine($"Input path does not exist: '{input.Path}'.");
+    return 2;
+}
+
+if (input.Kind == InputTargetKind.UnsupportedFile)
+{
+    Console.Error.WriteLine($"Unsupported input file: '{input.Path}'. Expected a .cs or .csproj file.");
+    return 2;
+}
+
+if (input.Kind == InputTargetKind.Project)
+{
+    Console.Error.WriteLine("Project analysis is not supported yet. Support for .csproj inputs is coming next.");
+    return 2;
+}
+
+var files = SourceFileDiscovery.Find(input.Path).ToArray();
 
 if (files.Length == 0)
 {
-    Console.Error.WriteLine($"No C# source files found at '{path}'.");
+    Console.Error.WriteLine($"No C# source files found at '{input.Path}'.");
     return 2;
 }
 
@@ -21,7 +41,7 @@ AnalyzerConfiguration configuration;
 try
 {
     var configPath = configArgument is null
-        ? ConfigurationLoader.Find(path)
+        ? ConfigurationLoader.Find(input.Path)
         : Path.GetFullPath(configArgument);
     configuration = configPath is null
         ? new AnalyzerConfiguration()
@@ -73,6 +93,7 @@ static bool TryParseArguments(string[] arguments, out string target, out string?
 
 static void PrintUsage()
 {
-    Console.WriteLine("Usage: review <file-or-directory> [--config <configuration-file>]");
+    Console.WriteLine("Usage: review <file-or-directory-or-project> [--config <configuration-file>]");
     Console.WriteLine("Reviews C# source files without sending code to an external service.");
+    Console.WriteLine("Accepted inputs: .cs files, directories, and .csproj projects (project analysis coming next).");
 }

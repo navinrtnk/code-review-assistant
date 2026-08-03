@@ -1,5 +1,6 @@
 using CodeReviewAssistant.Analysis;
 using CodeReviewAssistant.Configuration;
+using CodeReviewAssistant.Input;
 
 var analyzer = new SourceAnalyzer();
 var failures = new List<string>();
@@ -156,13 +157,47 @@ Run("invalid configuration is rejected", () =>
     }
 });
 
+Run("input detector recognizes C# source files", () =>
+{
+    WithTemporaryInput("Example.cs", target =>
+        Expect(InputTargetDetector.Detect(target).Kind == InputTargetKind.SourceFile,
+            "Expected a source-file input"));
+});
+
+Run("input detector recognizes directories", () =>
+{
+    WithTemporaryDirectory(target =>
+        Expect(InputTargetDetector.Detect(target).Kind == InputTargetKind.Directory,
+            "Expected a directory input"));
+});
+
+Run("input detector recognizes C# projects", () =>
+{
+    WithTemporaryInput("Example.csproj", target =>
+        Expect(InputTargetDetector.Detect(target).Kind == InputTargetKind.Project,
+            "Expected a project input"));
+});
+
+Run("input detector rejects unsupported file types", () =>
+{
+    WithTemporaryInput("README.md", target =>
+        Expect(InputTargetDetector.Detect(target).Kind == InputTargetKind.UnsupportedFile,
+            "Expected an unsupported-file input"));
+});
+
+Run("input detector reports missing paths", () =>
+{
+    var target = Path.Combine(Path.GetTempPath(), $"code-review-assistant-{Guid.NewGuid():N}", "Missing.cs");
+    Expect(InputTargetDetector.Detect(target).Kind == InputTargetKind.Missing, "Expected a missing input");
+});
+
 if (failures.Count > 0)
 {
     Console.Error.WriteLine($"{failures.Count} test(s) failed:\n- {string.Join("\n- ", failures)}");
     return 1;
 }
 
-Console.WriteLine("All 10 tests passed.");
+Console.WriteLine("All 15 tests passed.");
 return 0;
 
 void Run(string name, Action test)
@@ -174,4 +209,28 @@ void Run(string name, Action test)
 static void Expect(bool condition, string message)
 {
     if (!condition) throw new InvalidOperationException(message);
+}
+
+static void WithTemporaryInput(string fileName, Action<string> test)
+{
+    WithTemporaryDirectory(directory =>
+    {
+        var path = Path.Combine(directory, fileName);
+        File.WriteAllText(path, string.Empty);
+        test(path);
+    });
+}
+
+static void WithTemporaryDirectory(Action<string> test)
+{
+    var directory = Path.Combine(Path.GetTempPath(), $"code-review-assistant-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(directory);
+    try
+    {
+        test(directory);
+    }
+    finally
+    {
+        Directory.Delete(directory, recursive: true);
+    }
 }

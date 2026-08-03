@@ -1,6 +1,6 @@
 # Code Review Assistant
 
-[![Tests: 10 passing](https://img.shields.io/badge/tests-10%20passing-brightgreen)](#tests)
+[![Tests: 15 passing](https://img.shields.io/badge/tests-15%20passing-brightgreen)](#tests)
 
 A small, deterministic C# command-line tool that reviews C# source code locally. It uses Roslyn syntax trees and semantic models and does not send source code to an AI service.
 
@@ -22,6 +22,14 @@ Each file receives a maintainability score out of 100. This score is a lightweig
 dotnet build
 dotnet run --project src/CodeReviewAssistant -- path/to/file-or-directory
 ```
+
+The CLI accepts individual `.cs` files, directories, and `.csproj` project paths. Project inputs are detected and routed separately; full project analysis will be added in the next implementation step.
+
+```bash
+dotnet run --project src/CodeReviewAssistant -- path/to/Application.csproj
+```
+
+Until project loading is implemented, a `.csproj` input returns a clear `Project analysis is not supported yet` message instead of being treated as an empty source directory.
 
 To review this repository:
 
