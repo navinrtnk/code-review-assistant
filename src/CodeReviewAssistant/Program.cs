@@ -1,6 +1,7 @@
 using CodeReviewAssistant.Analysis;
 using CodeReviewAssistant.Configuration;
 using CodeReviewAssistant.Input;
+using CodeReviewAssistant.Projects;
 using CodeReviewAssistant.Reporting;
 
 if (!TryParseArguments(args, out var targetArgument, out var configArgument))
@@ -23,20 +24,6 @@ if (input.Kind == InputTargetKind.UnsupportedFile)
     return 2;
 }
 
-if (input.Kind == InputTargetKind.Project)
-{
-    Console.Error.WriteLine("Project analysis is not supported yet. Support for .csproj inputs is coming next.");
-    return 2;
-}
-
-var files = SourceFileDiscovery.Find(input.Path).ToArray();
-
-if (files.Length == 0)
-{
-    Console.Error.WriteLine($"No C# source files found at '{input.Path}'.");
-    return 2;
-}
-
 AnalyzerConfiguration configuration;
 try
 {
@@ -56,17 +43,49 @@ catch (ConfigurationException exception)
 var analyzer = new SourceAnalyzer(configuration);
 var results = new List<FileReview>();
 
-foreach (var file in files)
+if (input.Kind == InputTargetKind.Project)
 {
     try
     {
-        results.Add(analyzer.Review(file, await File.ReadAllTextAsync(file)));
+        var project = await new ProjectSourceLoader().LoadAsync(input.Path);
+        foreach (var document in project.Documents)
+        {
+            results.Add(analyzer.Review(document.Path, document.Source));
+        }
     }
-    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+    catch (ProjectLoadException exception)
     {
-        Console.Error.WriteLine($"Could not read '{file}': {exception.Message}");
+        Console.Error.WriteLine(exception.Message);
         return 2;
     }
+}
+else
+{
+    var files = SourceFileDiscovery.Find(input.Path).ToArray();
+    if (files.Length == 0)
+    {
+        Console.Error.WriteLine($"No C# source files found at '{input.Path}'.");
+        return 2;
+    }
+
+    foreach (var file in files)
+    {
+        try
+        {
+            results.Add(analyzer.Review(file, await File.ReadAllTextAsync(file)));
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"Could not read '{file}': {exception.Message}");
+            return 2;
+        }
+    }
+}
+
+if (results.Count == 0)
+{
+    Console.Error.WriteLine($"No C# source files found in project '{input.Path}'.");
+    return 2;
 }
 
 Console.Write(new ConsoleReportFormatter().Format(results));
@@ -95,5 +114,5 @@ static void PrintUsage()
 {
     Console.WriteLine("Usage: review <file-or-directory-or-project> [--config <configuration-file>]");
     Console.WriteLine("Reviews C# source files without sending code to an external service.");
-    Console.WriteLine("Accepted inputs: .cs files, directories, and .csproj projects (project analysis coming next).");
+    Console.WriteLine("Accepted inputs: .cs files, directories, and SDK-style .csproj projects.");
 }

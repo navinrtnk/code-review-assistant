@@ -1,6 +1,7 @@
 using CodeReviewAssistant.Analysis;
 using CodeReviewAssistant.Configuration;
 using CodeReviewAssistant.Input;
+using CodeReviewAssistant.Projects;
 
 var analyzer = new SourceAnalyzer();
 var failures = new List<string>();
@@ -191,13 +192,29 @@ Run("input detector reports missing paths", () =>
     Expect(InputTargetDetector.Detect(target).Kind == InputTargetKind.Missing, "Expected a missing input");
 });
 
+Run("MSBuild registration is idempotent", () =>
+{
+    MsBuildRegistration.EnsureRegistered();
+    MsBuildRegistration.EnsureRegistered();
+});
+
+Run("SDK-style projects load C# documents", () =>
+{
+    var projectPath = Path.Combine(FindRepositoryRoot(), "tests", "Fixtures", "SampleProject", "SampleProject.csproj");
+    var result = new ProjectSourceLoader().LoadAsync(projectPath).GetAwaiter().GetResult();
+    Expect(result.ProjectName == "SampleProject", $"Unexpected project name: {result.ProjectName}");
+    Expect(result.Documents.Count == 1, $"Expected one authored document, got {result.Documents.Count}");
+    Expect(result.Documents[0].Path.EndsWith("Calculator.cs", StringComparison.Ordinal),
+        "Expected Calculator.cs to be loaded without generated build artifacts");
+});
+
 if (failures.Count > 0)
 {
     Console.Error.WriteLine($"{failures.Count} test(s) failed:\n- {string.Join("\n- ", failures)}");
     return 1;
 }
 
-Console.WriteLine("All 15 tests passed.");
+Console.WriteLine("All 17 tests passed.");
 return 0;
 
 void Run(string name, Action test)
@@ -233,4 +250,20 @@ static void WithTemporaryDirectory(Action<string> test)
     {
         Directory.Delete(directory, recursive: true);
     }
+}
+
+static string FindRepositoryRoot()
+{
+    var directory = new DirectoryInfo(AppContext.BaseDirectory);
+    while (directory is not null)
+    {
+        if (File.Exists(Path.Combine(directory.FullName, "CodeReviewAssistant.slnx")))
+        {
+            return directory.FullName;
+        }
+
+        directory = directory.Parent;
+    }
+
+    throw new InvalidOperationException("Could not locate the repository root.");
 }
