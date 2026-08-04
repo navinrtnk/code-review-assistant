@@ -50,7 +50,7 @@ if (input.Kind == InputTargetKind.Project)
         var project = await new ProjectSourceLoader().LoadAsync(input.Path);
         foreach (var document in project.Documents)
         {
-            results.Add(analyzer.Review(document.Path, document.Source));
+            results.Add(analyzer.Review(document.Path, document.SyntaxTree, project.Compilation));
         }
     }
     catch (ProjectLoadException exception)

@@ -1,6 +1,6 @@
 # Code Review Assistant
 
-[![Tests: 17 passing](https://img.shields.io/badge/tests-17%20passing-brightgreen)](#tests)
+[![Tests: 18 passing](https://img.shields.io/badge/tests-18%20passing-brightgreen)](#tests)
 
 A small, deterministic C# command-line tool that reviews C# source code locally. It uses Roslyn syntax trees and semantic models and does not send source code to an AI service.
 
@@ -23,13 +23,13 @@ dotnet build
 dotnet run --project src/CodeReviewAssistant -- path/to/file-or-directory
 ```
 
-The CLI accepts individual `.cs` files, directories, and SDK-style `.csproj` project paths. Project inputs are loaded through Roslyn's MSBuild workspace so the correct project files and build settings are discovered.
+The CLI accepts individual `.cs` files, directories, and SDK-style `.csproj` project paths. Project inputs are loaded through Roslyn's MSBuild workspace, and all project documents are analyzed using one shared compilation with the project's references, compiler options, and cross-file symbol information.
 
 ```bash
 dotnet run --project src/CodeReviewAssistant -- path/to/Application.csproj
 ```
 
-The .NET SDK used by the project must be installed, and its NuGet dependencies should be restored before analysis. Individual source files are still analyzed independently after loading; sharing the complete project compilation across all rules is the next implementation milestone.
+The .NET SDK used by the project must be installed, and its NuGet dependencies should be restored before analysis. Generated `bin` and `obj` documents are excluded from the report. File and directory inputs continue to use lightweight standalone compilations because they do not provide project build context.
 
 To review this repository:
 
@@ -125,4 +125,4 @@ dotnet run --project tests/CodeReviewAssistant.Tests
 
 ## Current scope
 
-Roslyn provides formatting-independent parsing and symbol-aware analysis. The current rules remain intentionally focused: each file is compiled independently, so analysis that requires a complete project compilation is not yet available. Future versions should add project/solution loading and machine-readable output for CI integrations.
+Roslyn provides formatting-independent parsing and symbol-aware analysis. Project inputs use a shared compilation, while individual file and directory inputs have only standalone file context. Future versions should add solution loading, deeper project-aware rules, and machine-readable output for CI integrations.

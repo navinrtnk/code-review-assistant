@@ -9,29 +9,63 @@ public sealed class ProjectSourceLoader
         string projectPath,
         CancellationToken cancellationToken = default)
     {
-        try
-        {
-            MsBuildRegistration.EnsureRegistered();
-        }
-        catch (InvalidOperationException exception)
-        {
-            throw new ProjectLoadException($"Could not locate a compatible MSBuild installation: {exception.Message}", exception);
-        }
-
+        EnsureMsBuildRegistered();
         using var workspace = MSBuildWorkspace.Create();
         var diagnostics = new List<WorkspaceDiagnostic>();
         workspace.RegisterWorkspaceFailedHandler(eventArgs => diagnostics.Add(eventArgs.Diagnostic));
 
-        Project project;
+        var project = await OpenProjectAsync(workspace, projectPath, cancellationToken);
+        ThrowIfWorkspaceFailed(projectPath, diagnostics);
+        var compilation = await project.GetCompilationAsync(cancellationToken)
+            ?? throw new ProjectLoadException($"Roslyn could not create a compilation for project '{projectPath}'.");
+        var documents = await LoadDocumentsAsync(project, cancellationToken);
+
+        return new ProjectLoadResult(
+            project.Name,
+            compilation,
+            documents,
+            diagnostics.Select(item => item.Message).ToArray());
+    }
+
+    private static async Task<IReadOnlyList<ProjectSourceDocument>> LoadDocumentsAsync(
+        Project project,
+        CancellationToken cancellationToken)
+    {
+        var documents = new List<ProjectSourceDocument>();
+        foreach (var document in project.Documents.Where(document => document.SourceCodeKind == SourceCodeKind.Regular))
+        {
+            if (document.FilePath is null || IsBuildArtifact(document.FilePath))
+            {
+                continue;
+            }
+
+            var syntaxTree = await document.GetSyntaxTreeAsync(cancellationToken);
+            if (syntaxTree is not null)
+            {
+                documents.Add(new ProjectSourceDocument(document.FilePath, syntaxTree));
+            }
+        }
+
+        return documents;
+    }
+
+    private static async Task<Project> OpenProjectAsync(
+        MSBuildWorkspace workspace,
+        string projectPath,
+        CancellationToken cancellationToken)
+    {
         try
         {
-            project = await workspace.OpenProjectAsync(projectPath, cancellationToken: cancellationToken);
+            return await workspace.OpenProjectAsync(projectPath, cancellationToken: cancellationToken);
         }
         catch (Exception exception) when (exception is InvalidOperationException or IOException)
         {
             throw new ProjectLoadException($"Could not load project '{projectPath}': {exception.Message}", exception);
         }
+    }
 
+    private static void ThrowIfWorkspaceFailed(string projectPath, IEnumerable<WorkspaceDiagnostic> diagnostics)
+    {
         var failures = diagnostics
             .Where(diagnostic => diagnostic.Kind == WorkspaceDiagnosticKind.Failure)
             .Select(diagnostic => diagnostic.Message)
@@ -41,20 +75,19 @@ public sealed class ProjectSourceLoader
             throw new ProjectLoadException(
                 $"Could not load project '{projectPath}': {string.Join("; ", failures)}");
         }
+    }
 
-        var documents = new List<ProjectSourceDocument>();
-        foreach (var document in project.Documents.Where(document => document.SourceCodeKind == SourceCodeKind.Regular))
+    private static void EnsureMsBuildRegistered()
+    {
+        try
         {
-            if (document.FilePath is null || IsBuildArtifact(document.FilePath))
-            {
-                continue;
-            }
-
-            var text = await document.GetTextAsync(cancellationToken);
-            documents.Add(new ProjectSourceDocument(document.FilePath, text.ToString()));
+            MsBuildRegistration.EnsureRegistered();
         }
-
-        return new ProjectLoadResult(project.Name, documents, diagnostics.Select(item => item.Message).ToArray());
+        catch (InvalidOperationException exception)
+        {
+            throw new ProjectLoadException(
+                $"Could not locate a compatible MSBuild installation: {exception.Message}", exception);
+        }
     }
 
     private static bool IsBuildArtifact(string path)
@@ -64,10 +97,11 @@ public sealed class ProjectSourceLoader
     }
 }
 
-public sealed record ProjectSourceDocument(string Path, string Source);
+public sealed record ProjectSourceDocument(string Path, SyntaxTree SyntaxTree);
 
 public sealed record ProjectLoadResult(
     string ProjectName,
+    Compilation Compilation,
     IReadOnlyList<ProjectSourceDocument> Documents,
     IReadOnlyList<string> Diagnostics);
 

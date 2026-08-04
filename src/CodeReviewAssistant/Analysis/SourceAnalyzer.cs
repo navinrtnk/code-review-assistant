@@ -24,12 +24,22 @@ public sealed class SourceAnalyzer
             source,
             CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest),
             path);
-        var root = syntaxTree.GetRoot();
         var compilation = CSharpCompilation.Create(
             "CodeUnderReview",
             [syntaxTree],
             PlatformReferences.Value,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        return Review(path, syntaxTree, compilation);
+    }
+
+    public FileReview Review(string path, SyntaxTree syntaxTree, Compilation compilation)
+    {
+        if (!compilation.SyntaxTrees.Contains(syntaxTree))
+        {
+            throw new ArgumentException("The compilation does not contain the supplied syntax tree.", nameof(compilation));
+        }
+
+        var root = syntaxTree.GetRoot();
         var semanticModel = compilation.GetSemanticModel(syntaxTree);
         var findings = new List<ReviewFinding>();
 

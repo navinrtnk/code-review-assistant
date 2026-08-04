@@ -2,6 +2,7 @@ using CodeReviewAssistant.Analysis;
 using CodeReviewAssistant.Configuration;
 using CodeReviewAssistant.Input;
 using CodeReviewAssistant.Projects;
+using Microsoft.CodeAnalysis;
 
 var analyzer = new SourceAnalyzer();
 var failures = new List<string>();
@@ -203,9 +204,27 @@ Run("SDK-style projects load C# documents", () =>
     var projectPath = Path.Combine(FindRepositoryRoot(), "tests", "Fixtures", "SampleProject", "SampleProject.csproj");
     var result = new ProjectSourceLoader().LoadAsync(projectPath).GetAwaiter().GetResult();
     Expect(result.ProjectName == "SampleProject", $"Unexpected project name: {result.ProjectName}");
-    Expect(result.Documents.Count == 1, $"Expected one authored document, got {result.Documents.Count}");
-    Expect(result.Documents[0].Path.EndsWith("Calculator.cs", StringComparison.Ordinal),
-        "Expected Calculator.cs to be loaded without generated build artifacts");
+    Expect(result.Documents.Count == 2, $"Expected two authored documents, got {result.Documents.Count}");
+    Expect(result.Documents.All(document => result.Compilation.SyntaxTrees.Contains(document.SyntaxTree)),
+        "Every authored document should belong to the shared compilation");
+});
+
+Run("project documents use cross-file semantic information", () =>
+{
+    var projectPath = Path.Combine(FindRepositoryRoot(), "tests", "Fixtures", "SampleProject", "SampleProject.csproj");
+    var result = new ProjectSourceLoader().LoadAsync(projectPath).GetAwaiter().GetResult();
+    var document = result.Documents.Single(item =>
+        string.Equals(Path.GetFileName(item.Path), "Calculator.cs", StringComparison.Ordinal));
+    var model = result.Compilation.GetSemanticModel(document.SyntaxTree);
+    var calculator = document.SyntaxTree.GetRoot().DescendantNodes()
+        .OfType<Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax>()
+        .Single();
+    var interfaceType = model.GetTypeInfo(calculator.BaseList!.Types.Single().Type).Type;
+
+    Expect(interfaceType?.ToDisplayString() == "SampleProject.ICalculator",
+        "Expected ICalculator to resolve from another project document");
+    var review = new SourceAnalyzer().Review(document.Path, document.SyntaxTree, result.Compilation);
+    Expect(review.Score == 100, $"Expected a clean shared-compilation review, got {review.Score}");
 });
 
 if (failures.Count > 0)
@@ -214,7 +233,7 @@ if (failures.Count > 0)
     return 1;
 }
 
-Console.WriteLine("All 17 tests passed.");
+Console.WriteLine("All 18 tests passed.");
 return 0;
 
 void Run(string name, Action test)

@@ -1,8 +1,8 @@
 namespace SampleProject;
 
-public static class Calculator
+public sealed class Calculator : ICalculator
 {
-    public static int Add(int left, int right)
+    public int Add(int left, int right)
     {
         var total = left + right;
         return total;
