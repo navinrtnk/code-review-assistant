@@ -19,12 +19,13 @@ public sealed class ProjectSourceLoader
         var compilation = await project.GetCompilationAsync(cancellationToken)
             ?? throw new ProjectLoadException($"Roslyn could not create a compilation for project '{projectPath}'.");
         var documents = await LoadDocumentsAsync(project, cancellationToken);
+        var projectDiagnostics = GetProjectDiagnostics(compilation, diagnostics, cancellationToken);
 
         return new ProjectLoadResult(
             project.Name,
             compilation,
             documents,
-            diagnostics.Select(item => item.Message).ToArray());
+            projectDiagnostics);
     }
 
     private static async Task<IReadOnlyList<ProjectSourceDocument>> LoadDocumentsAsync(
@@ -90,6 +91,47 @@ public sealed class ProjectSourceLoader
         }
     }
 
+    private static IReadOnlyList<ProjectDiagnostic> GetProjectDiagnostics(
+        Compilation compilation,
+        IEnumerable<WorkspaceDiagnostic> workspaceDiagnostics,
+        CancellationToken cancellationToken)
+    {
+        var diagnostics = workspaceDiagnostics
+            .Select(item => new ProjectDiagnostic(
+                "MSBUILD",
+                item.Kind == WorkspaceDiagnosticKind.Failure
+                    ? ProjectDiagnosticSeverity.Error
+                    : ProjectDiagnosticSeverity.Warning,
+                ProjectDiagnosticOrigin.Workspace,
+                item.Message))
+            .ToList();
+
+        diagnostics.AddRange(compilation.GetDiagnostics(cancellationToken)
+            .Where(item => item.Severity is DiagnosticSeverity.Warning or DiagnosticSeverity.Error)
+            .Where(item => !IsGeneratedDiagnostic(item))
+            .Select(ToProjectDiagnostic));
+        return diagnostics;
+    }
+
+    private static ProjectDiagnostic ToProjectDiagnostic(Diagnostic diagnostic)
+    {
+        var lineSpan = diagnostic.Location.IsInSource
+            ? diagnostic.Location.GetLineSpan()
+            : default;
+        return new ProjectDiagnostic(
+            diagnostic.Id,
+            diagnostic.Severity == DiagnosticSeverity.Error
+                ? ProjectDiagnosticSeverity.Error
+                : ProjectDiagnosticSeverity.Warning,
+            ProjectDiagnosticOrigin.Compilation,
+            diagnostic.GetMessage(),
+            lineSpan.IsValid ? lineSpan.Path : null,
+            lineSpan.IsValid ? lineSpan.StartLinePosition.Line + 1 : null);
+    }
+
+    private static bool IsGeneratedDiagnostic(Diagnostic diagnostic) =>
+        diagnostic.Location.IsInSource && IsBuildArtifact(diagnostic.Location.SourceTree?.FilePath ?? string.Empty);
+
     private static bool IsBuildArtifact(string path)
     {
         var segments = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
@@ -103,7 +145,7 @@ public sealed record ProjectLoadResult(
     string ProjectName,
     Compilation Compilation,
     IReadOnlyList<ProjectSourceDocument> Documents,
-    IReadOnlyList<string> Diagnostics);
+    IReadOnlyList<ProjectDiagnostic> Diagnostics);
 
 public sealed class ProjectLoadException : Exception
 {

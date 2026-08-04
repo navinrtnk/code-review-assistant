@@ -42,12 +42,14 @@ catch (ConfigurationException exception)
 
 var analyzer = new SourceAnalyzer(configuration);
 var results = new List<FileReview>();
+IReadOnlyList<ProjectDiagnostic> projectDiagnostics = [];
 
 if (input.Kind == InputTargetKind.Project)
 {
     try
     {
         var project = await new ProjectSourceLoader().LoadAsync(input.Path);
+        projectDiagnostics = project.Diagnostics;
         foreach (var document in project.Documents)
         {
             results.Add(analyzer.Review(document.Path, document.SyntaxTree, project.Compilation));
@@ -88,6 +90,7 @@ if (results.Count == 0)
     return 2;
 }
 
+Console.Write(new ProjectDiagnosticFormatter().Format(projectDiagnostics));
 Console.Write(new ConsoleReportFormatter().Format(results));
 return 0;
 

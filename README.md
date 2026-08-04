@@ -1,6 +1,6 @@
 # Code Review Assistant
 
-[![Tests: 18 passing](https://img.shields.io/badge/tests-18%20passing-brightgreen)](#tests)
+[![Tests: 21 passing](https://img.shields.io/badge/tests-21%20passing-brightgreen)](#tests)
 
 A small, deterministic C# command-line tool that reviews C# source code locally. It uses Roslyn syntax trees and semantic models and does not send source code to an AI service.
 
@@ -29,7 +29,7 @@ The CLI accepts individual `.cs` files, directories, and SDK-style `.csproj` pro
 dotnet run --project src/CodeReviewAssistant -- path/to/Application.csproj
 ```
 
-The .NET SDK used by the project must be installed, and its NuGet dependencies should be restored before analysis. Generated `bin` and `obj` documents are excluded from the report. File and directory inputs continue to use lightweight standalone compilations because they do not provide project build context.
+The .NET SDK used by the project must be installed, and its NuGet dependencies should be restored before analysis. Compiler warnings and errors are displayed with their IDs and source locations before the maintainability report; ordinary compiler errors do not prevent review rules from running. Workspace failures, such as missing project references, produce a clear loading error. Generated `bin` and `obj` documents and diagnostics are excluded.
 
 To review this repository:
 
@@ -122,6 +122,8 @@ The smoke-test project avoids an external test framework and can be run directly
 ```bash
 dotnet run --project tests/CodeReviewAssistant.Tests
 ```
+
+Integration fixtures cover a clean cross-file project, a project with compiler errors, and a project with a missing reference under [`tests/Fixtures`](tests/Fixtures).
 
 ## Current scope
 

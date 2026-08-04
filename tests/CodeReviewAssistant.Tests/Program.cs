@@ -2,6 +2,7 @@ using CodeReviewAssistant.Analysis;
 using CodeReviewAssistant.Configuration;
 using CodeReviewAssistant.Input;
 using CodeReviewAssistant.Projects;
+using CodeReviewAssistant.Reporting;
 using Microsoft.CodeAnalysis;
 
 var analyzer = new SourceAnalyzer();
@@ -227,13 +228,55 @@ Run("project documents use cross-file semantic information", () =>
     Expect(review.Score == 100, $"Expected a clean shared-compilation review, got {review.Score}");
 });
 
+Run("project compilation diagnostics include source locations", () =>
+{
+    var projectPath = Path.Combine(
+        FindRepositoryRoot(), "tests", "Fixtures", "ProjectWithDiagnostics", "ProjectWithDiagnostics.csproj");
+    var result = new ProjectSourceLoader().LoadAsync(projectPath).GetAwaiter().GetResult();
+    var diagnostic = result.Diagnostics.FirstOrDefault(item => item.Id == "CS0246")
+        ?? throw new InvalidOperationException("Expected a CS0246 diagnostic");
+    Expect(diagnostic.Path?.EndsWith("BrokenService.cs", StringComparison.Ordinal) == true,
+        "Expected the compiler diagnostic source path");
+    Expect(diagnostic.Line is 5 or 8, $"Unexpected compiler diagnostic line: {diagnostic.Line}");
+    var formatted = new ProjectDiagnosticFormatter().Format(result.Diagnostics);
+    Expect(formatted.Contains("Project Diagnostics", StringComparison.Ordinal), "Expected a diagnostics heading");
+    Expect(formatted.Contains("CS0246", StringComparison.Ordinal), "Expected the diagnostic ID in output");
+});
+
+Run("analysis continues when a project has compiler errors", () =>
+{
+    var projectPath = Path.Combine(
+        FindRepositoryRoot(), "tests", "Fixtures", "ProjectWithDiagnostics", "ProjectWithDiagnostics.csproj");
+    var result = new ProjectSourceLoader().LoadAsync(projectPath).GetAwaiter().GetResult();
+    var document = result.Documents.Single();
+    var review = new SourceAnalyzer().Review(document.Path, document.SyntaxTree, result.Compilation);
+    Expect(review.Findings.Any(finding => finding.RuleId == "CRA002"),
+        "Expected maintainability analysis to continue after compiler errors");
+});
+
+Run("workspace failures identify project loading problems", () =>
+{
+    var projectPath = Path.Combine(
+        FindRepositoryRoot(), "tests", "Fixtures", "ProjectWithMissingReference", "ProjectWithMissingReference.csproj");
+    try
+    {
+        new ProjectSourceLoader().LoadAsync(projectPath).GetAwaiter().GetResult();
+        throw new InvalidOperationException("Expected the missing project reference to fail");
+    }
+    catch (ProjectLoadException exception)
+    {
+        Expect(exception.Message.Contains("DoesNotExist", StringComparison.Ordinal),
+            "Expected the missing reference in the workspace error");
+    }
+});
+
 if (failures.Count > 0)
 {
     Console.Error.WriteLine($"{failures.Count} test(s) failed:\n- {string.Join("\n- ", failures)}");
     return 1;
 }
 
-Console.WriteLine("All 18 tests passed.");
+Console.WriteLine("All 21 tests passed.");
 return 0;
 
 void Run(string name, Action test)
