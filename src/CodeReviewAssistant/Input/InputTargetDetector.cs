@@ -19,6 +19,7 @@ public static class InputTargetDetector
         {
             ".cs" => new InputTarget(fullPath, InputTargetKind.SourceFile),
             ".csproj" => new InputTarget(fullPath, InputTargetKind.Project),
+            ".sln" or ".slnx" => new InputTarget(fullPath, InputTargetKind.Solution),
             _ => new InputTarget(fullPath, InputTargetKind.UnsupportedFile)
         };
     }

@@ -1,6 +1,6 @@
 # Code Review Assistant
 
-[![Tests: 21 passing](https://img.shields.io/badge/tests-21%20passing-brightgreen)](#tests)
+[![Tests: 24 passing](https://img.shields.io/badge/tests-24%20passing-brightgreen)](#tests)
 
 A small, deterministic C# command-line tool that reviews C# source code locally. It uses Roslyn syntax trees and semantic models and does not send source code to an AI service.
 
@@ -23,10 +23,16 @@ dotnet build
 dotnet run --project src/CodeReviewAssistant -- path/to/file-or-directory
 ```
 
-The CLI accepts individual `.cs` files, directories, and SDK-style `.csproj` project paths. Project inputs are loaded through Roslyn's MSBuild workspace, and all project documents are analyzed using one shared compilation with the project's references, compiler options, and cross-file symbol information.
+The CLI accepts individual `.cs` files, directories, SDK-style `.csproj` projects, and `.sln` or `.slnx` solutions. Project and solution inputs are loaded through Roslyn's MSBuild workspace, and each project's documents are analyzed using its shared compilation, references, compiler options, and cross-file symbol information.
 
 ```bash
 dotnet run --project src/CodeReviewAssistant -- path/to/Application.csproj
+```
+
+Analyze every C# project in a solution with:
+
+```bash
+dotnet run --project src/CodeReviewAssistant -- path/to/Application.sln
 ```
 
 The .NET SDK used by the project must be installed, and its NuGet dependencies should be restored before analysis. Compiler warnings and errors are displayed with their IDs and source locations before the maintainability report; ordinary compiler errors do not prevent review rules from running. Workspace failures, such as missing project references, produce a clear loading error. Generated `bin` and `obj` documents and diagnostics are excluded.
@@ -123,8 +129,8 @@ The smoke-test project avoids an external test framework and can be run directly
 dotnet run --project tests/CodeReviewAssistant.Tests
 ```
 
-Integration fixtures cover a clean cross-file project, a project with compiler errors, and a project with a missing reference under [`tests/Fixtures`](tests/Fixtures).
+Integration fixtures cover a multi-project solution, a clean cross-file project, a project with compiler errors, and a project with a missing reference under [`tests/Fixtures`](tests/Fixtures).
 
 ## Current scope
 
-Roslyn provides formatting-independent parsing and symbol-aware analysis. Project inputs use a shared compilation, while individual file and directory inputs have only standalone file context. Future versions should add solution loading, deeper project-aware rules, and machine-readable output for CI integrations.
+Roslyn provides formatting-independent parsing and symbol-aware analysis. Project and solution inputs use shared project compilations, while individual file and directory inputs have only standalone file context. Future versions should add deeper project-aware rules and machine-readable output for CI integrations.

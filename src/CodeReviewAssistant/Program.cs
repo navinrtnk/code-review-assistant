@@ -20,7 +20,7 @@ if (input.Kind == InputTargetKind.Missing)
 
 if (input.Kind == InputTargetKind.UnsupportedFile)
 {
-    Console.Error.WriteLine($"Unsupported input file: '{input.Path}'. Expected a .cs or .csproj file.");
+    Console.Error.WriteLine($"Unsupported input file: '{input.Path}'. Expected a .cs, .csproj, .sln, or .slnx file.");
     return 2;
 }
 
@@ -61,6 +61,28 @@ if (input.Kind == InputTargetKind.Project)
         return 2;
     }
 }
+else if (input.Kind == InputTargetKind.Solution)
+{
+    try
+    {
+        var solution = await new SolutionSourceLoader().LoadAsync(input.Path);
+        projectDiagnostics = solution.Diagnostics;
+        var pathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        var reviewedPaths = new HashSet<string>(pathComparer);
+        foreach (var project in solution.Projects)
+        {
+            foreach (var document in project.Documents.Where(document => reviewedPaths.Add(document.Path)))
+            {
+                results.Add(analyzer.Review(document.Path, document.SyntaxTree, project.Compilation));
+            }
+        }
+    }
+    catch (ProjectLoadException exception)
+    {
+        Console.Error.WriteLine(exception.Message);
+        return 2;
+    }
+}
 else
 {
     var files = SourceFileDiscovery.Find(input.Path).ToArray();
@@ -86,7 +108,7 @@ else
 
 if (results.Count == 0)
 {
-    Console.Error.WriteLine($"No C# source files found in project '{input.Path}'.");
+    Console.Error.WriteLine($"No C# source files found in input '{input.Path}'.");
     return 2;
 }
 
@@ -115,7 +137,7 @@ static bool TryParseArguments(string[] arguments, out string target, out string?
 
 static void PrintUsage()
 {
-    Console.WriteLine("Usage: review <file-or-directory-or-project> [--config <configuration-file>]");
+    Console.WriteLine("Usage: review <file-directory-project-or-solution> [--config <configuration-file>]");
     Console.WriteLine("Reviews C# source files without sending code to an external service.");
-    Console.WriteLine("Accepted inputs: .cs files, directories, and SDK-style .csproj projects.");
+    Console.WriteLine("Accepted inputs: .cs files, directories, SDK-style .csproj projects, and .sln/.slnx solutions.");
 }

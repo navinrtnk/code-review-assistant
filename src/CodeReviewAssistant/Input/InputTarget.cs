@@ -5,6 +5,7 @@ public enum InputTargetKind
     SourceFile,
     Directory,
     Project,
+    Solution,
     UnsupportedFile,
     Missing
 }

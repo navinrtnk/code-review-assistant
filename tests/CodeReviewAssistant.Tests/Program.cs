@@ -181,6 +181,16 @@ Run("input detector recognizes C# projects", () =>
             "Expected a project input"));
 });
 
+Run("input detector recognizes solution formats", () =>
+{
+    WithTemporaryInput("Example.sln", target =>
+        Expect(InputTargetDetector.Detect(target).Kind == InputTargetKind.Solution,
+            "Expected an SLN solution input"));
+    WithTemporaryInput("Example.slnx", target =>
+        Expect(InputTargetDetector.Detect(target).Kind == InputTargetKind.Solution,
+            "Expected an SLNX solution input"));
+});
+
 Run("input detector rejects unsupported file types", () =>
 {
     WithTemporaryInput("README.md", target =>
@@ -270,13 +280,37 @@ Run("workspace failures identify project loading problems", () =>
     }
 });
 
+Run("solutions load every C# project", () =>
+{
+    foreach (var extension in new[] { ".sln", ".slnx" })
+    {
+        var solutionPath = Path.Combine(
+            FindRepositoryRoot(), "tests", "Fixtures", "SampleSolution", $"SampleSolution{extension}");
+        var result = new SolutionSourceLoader().LoadAsync(solutionPath).GetAwaiter().GetResult();
+        Expect(result.Projects.Count == 2, $"Expected two projects from {extension}, got {result.Projects.Count}");
+        Expect(result.Projects.Select(project => project.ProjectName).Order().SequenceEqual(["App", "Domain"]),
+            $"Expected the App and Domain projects from {extension}");
+        Expect(result.Projects.SelectMany(project => project.Documents).Count() == 2,
+            $"Expected both authored source documents from {extension}");
+    }
+});
+
+Run("solution project references resolve without compiler errors", () =>
+{
+    var solutionPath = Path.Combine(
+        FindRepositoryRoot(), "tests", "Fixtures", "SampleSolution", "SampleSolution.slnx");
+    var result = new SolutionSourceLoader().LoadAsync(solutionPath).GetAwaiter().GetResult();
+    Expect(result.Diagnostics.All(diagnostic => diagnostic.Severity != ProjectDiagnosticSeverity.Error),
+        "Expected project references to resolve in the solution");
+});
+
 if (failures.Count > 0)
 {
     Console.Error.WriteLine($"{failures.Count} test(s) failed:\n- {string.Join("\n- ", failures)}");
     return 1;
 }
 
-Console.WriteLine("All 21 tests passed.");
+Console.WriteLine("All 24 tests passed.");
 return 0;
 
 void Run(string name, Action test)

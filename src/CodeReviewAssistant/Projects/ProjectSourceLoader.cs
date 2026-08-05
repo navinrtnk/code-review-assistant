@@ -16,10 +16,18 @@ public sealed class ProjectSourceLoader
 
         var project = await OpenProjectAsync(workspace, projectPath, cancellationToken);
         ThrowIfWorkspaceFailed(projectPath, diagnostics);
+        return await CreateResultAsync(project, diagnostics, cancellationToken);
+    }
+
+    internal static async Task<ProjectLoadResult> CreateResultAsync(
+        Project project,
+        IEnumerable<WorkspaceDiagnostic> workspaceDiagnostics,
+        CancellationToken cancellationToken)
+    {
         var compilation = await project.GetCompilationAsync(cancellationToken)
-            ?? throw new ProjectLoadException($"Roslyn could not create a compilation for project '{projectPath}'.");
+            ?? throw new ProjectLoadException($"Roslyn could not create a compilation for project '{project.FilePath}'.");
         var documents = await LoadDocumentsAsync(project, cancellationToken);
-        var projectDiagnostics = GetProjectDiagnostics(compilation, diagnostics, cancellationToken);
+        var projectDiagnostics = GetProjectDiagnostics(compilation, workspaceDiagnostics, cancellationToken);
 
         return new ProjectLoadResult(
             project.Name,
@@ -65,7 +73,7 @@ public sealed class ProjectSourceLoader
         }
     }
 
-    private static void ThrowIfWorkspaceFailed(string projectPath, IEnumerable<WorkspaceDiagnostic> diagnostics)
+    internal static void ThrowIfWorkspaceFailed(string path, IEnumerable<WorkspaceDiagnostic> diagnostics)
     {
         var failures = diagnostics
             .Where(diagnostic => diagnostic.Kind == WorkspaceDiagnosticKind.Failure)
@@ -74,11 +82,11 @@ public sealed class ProjectSourceLoader
         if (failures.Length > 0)
         {
             throw new ProjectLoadException(
-                $"Could not load project '{projectPath}': {string.Join("; ", failures)}");
+                $"Could not load '{path}': {string.Join("; ", failures)}");
         }
     }
 
-    private static void EnsureMsBuildRegistered()
+    internal static void EnsureMsBuildRegistered()
     {
         try
         {
@@ -97,13 +105,7 @@ public sealed class ProjectSourceLoader
         CancellationToken cancellationToken)
     {
         var diagnostics = workspaceDiagnostics
-            .Select(item => new ProjectDiagnostic(
-                "MSBUILD",
-                item.Kind == WorkspaceDiagnosticKind.Failure
-                    ? ProjectDiagnosticSeverity.Error
-                    : ProjectDiagnosticSeverity.Warning,
-                ProjectDiagnosticOrigin.Workspace,
-                item.Message))
+            .Select(ToProjectDiagnostic)
             .ToList();
 
         diagnostics.AddRange(compilation.GetDiagnostics(cancellationToken)
@@ -112,6 +114,15 @@ public sealed class ProjectSourceLoader
             .Select(ToProjectDiagnostic));
         return diagnostics;
     }
+
+    internal static ProjectDiagnostic ToProjectDiagnostic(WorkspaceDiagnostic diagnostic) =>
+        new(
+            "MSBUILD",
+            diagnostic.Kind == WorkspaceDiagnosticKind.Failure
+                ? ProjectDiagnosticSeverity.Error
+                : ProjectDiagnosticSeverity.Warning,
+            ProjectDiagnosticOrigin.Workspace,
+            diagnostic.Message);
 
     private static ProjectDiagnostic ToProjectDiagnostic(Diagnostic diagnostic)
     {
