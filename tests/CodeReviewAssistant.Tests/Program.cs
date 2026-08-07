@@ -290,9 +290,30 @@ Run("solutions load every C# project", () =>
         Expect(result.Projects.Count == 2, $"Expected two projects from {extension}, got {result.Projects.Count}");
         Expect(result.Projects.Select(project => project.ProjectName).Order().SequenceEqual(["App", "Domain"]),
             $"Expected the App and Domain projects from {extension}");
-        Expect(result.Projects.SelectMany(project => project.Documents).Count() == 2,
-            $"Expected both authored source documents from {extension}");
+        Expect(result.Projects.SelectMany(project => project.Documents).Count() == 4,
+            $"Expected four project document entries from {extension}");
+        Expect(result.Documents.Count == 3,
+            $"Expected three distinct source documents from {extension}");
     }
+});
+
+Run("linked solution documents are analyzed once", () =>
+{
+    var solutionPath = Path.Combine(
+        FindRepositoryRoot(), "tests", "Fixtures", "SampleSolution", "SampleSolution.slnx");
+    var result = new SolutionSourceLoader().LoadAsync(solutionPath).GetAwaiter().GetResult();
+    var linkedDocuments = result.Projects
+        .SelectMany(project => project.Documents)
+        .Where(document => string.Equals(Path.GetFileName(document.Path), "SharedInfo.cs", StringComparison.Ordinal))
+        .ToArray();
+    var distinctDocuments = result.Documents
+        .Where(document => string.Equals(Path.GetFileName(document.Path), "SharedInfo.cs", StringComparison.Ordinal))
+        .ToArray();
+
+    Expect(linkedDocuments.Length == 2, "Expected the linked file in both project compilations");
+    Expect(distinctDocuments.Length == 1, "Expected the linked file once in solution analysis");
+    Expect(distinctDocuments[0].Compilation.SyntaxTrees.Contains(distinctDocuments[0].SyntaxTree),
+        "Expected the retained document to use its owning project compilation");
 });
 
 Run("solution project references resolve without compiler errors", () =>
@@ -310,7 +331,7 @@ if (failures.Count > 0)
     return 1;
 }
 
-Console.WriteLine("All 24 tests passed.");
+Console.WriteLine("All 25 tests passed.");
 return 0;
 
 void Run(string name, Action test)

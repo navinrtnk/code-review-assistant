@@ -1,6 +1,6 @@
 # Code Review Assistant
 
-[![Tests: 24 passing](https://img.shields.io/badge/tests-24%20passing-brightgreen)](#tests)
+[![Tests: 25 passing](https://img.shields.io/badge/tests-25%20passing-brightgreen)](#tests)
 
 A small, deterministic C# command-line tool that reviews C# source code locally. It uses Roslyn syntax trees and semantic models and does not send source code to an AI service.
 
@@ -23,19 +23,41 @@ dotnet build
 dotnet run --project src/CodeReviewAssistant -- path/to/file-or-directory
 ```
 
-The CLI accepts individual `.cs` files, directories, SDK-style `.csproj` projects, and `.sln` or `.slnx` solutions. Project and solution inputs are loaded through Roslyn's MSBuild workspace, and each project's documents are analyzed using its shared compilation, references, compiler options, and cross-file symbol information.
+### Input modes
+
+| Input | Behavior |
+| --- | --- |
+| `.cs` file | Reviews one file with a lightweight standalone compilation. |
+| Directory | Recursively reviews `.cs` files, excluding `bin` and `obj`. |
+| `.csproj` project | Loads one SDK-style project and reviews its documents with a shared project compilation. |
+| `.sln` or `.slnx` solution | Loads every C# project and reviews distinct source documents with their project compilation. |
+
+### Project analysis
 
 ```bash
 dotnet run --project src/CodeReviewAssistant -- path/to/Application.csproj
 ```
 
-Analyze every C# project in a solution with:
+Project mode uses the actual references, compiler options, conditional symbols, and cross-file type information discovered by Roslyn and MSBuild.
+
+### Solution analysis
 
 ```bash
 dotnet run --project src/CodeReviewAssistant -- path/to/Application.sln
+dotnet run --project src/CodeReviewAssistant -- path/to/Application.slnx
 ```
 
-The .NET SDK used by the project must be installed, and its NuGet dependencies should be restored before analysis. Compiler warnings and errors are displayed with their IDs and source locations before the maintainability report; ordinary compiler errors do not prevent review rules from running. Workspace failures, such as missing project references, produce a clear loading error. Generated `bin` and `obj` documents and diagnostics are excluded.
+Solution mode loads every C# project. If a linked source file belongs to multiple projects, it is reviewed once using the first project containing it; compiler diagnostics are still collected from every project.
+
+### Requirements and diagnostics
+
+- The required .NET SDK and workloads must be installed.
+- NuGet dependencies should be restored before analysis.
+- SDK-style C# projects are supported; unsupported project types produce a workspace error.
+- Compiler warnings and errors are shown with their IDs and source locations before the review summary.
+- Ordinary compiler errors do not prevent maintainability rules from running.
+- Workspace failures, such as missing project references, stop analysis with a clear error.
+- Generated `bin` and `obj` documents and diagnostics are excluded.
 
 To review this repository:
 

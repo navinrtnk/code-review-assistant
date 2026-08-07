@@ -67,14 +67,9 @@ else if (input.Kind == InputTargetKind.Solution)
     {
         var solution = await new SolutionSourceLoader().LoadAsync(input.Path);
         projectDiagnostics = solution.Diagnostics;
-        var pathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
-        var reviewedPaths = new HashSet<string>(pathComparer);
-        foreach (var project in solution.Projects)
+        foreach (var document in solution.Documents)
         {
-            foreach (var document in project.Documents.Where(document => reviewedPaths.Add(document.Path)))
-            {
-                results.Add(analyzer.Review(document.Path, document.SyntaxTree, project.Compilation));
-            }
+            results.Add(analyzer.Review(document.Path, document.SyntaxTree, document.Compilation));
         }
     }
     catch (ProjectLoadException exception)

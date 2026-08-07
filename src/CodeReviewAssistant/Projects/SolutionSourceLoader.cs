@@ -28,7 +28,30 @@ public sealed class SolutionSourceLoader
             .Concat(projects.SelectMany(project => project.Diagnostics))
             .Distinct()
             .ToArray();
-        return new SolutionLoadResult(projects, diagnostics);
+        return new SolutionLoadResult(projects, GetDistinctDocuments(projects), diagnostics);
+    }
+
+    private static IReadOnlyList<SolutionSourceDocument> GetDistinctDocuments(
+        IEnumerable<ProjectLoadResult> projects)
+    {
+        var pathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        var paths = new HashSet<string>(pathComparer);
+        var documents = new List<SolutionSourceDocument>();
+
+        foreach (var project in projects)
+        {
+            foreach (var document in project.Documents)
+            {
+                var fullPath = Path.GetFullPath(document.Path);
+                if (paths.Add(fullPath))
+                {
+                    documents.Add(new SolutionSourceDocument(
+                        fullPath, document.SyntaxTree, project.Compilation, project.ProjectName));
+                }
+            }
+        }
+
+        return documents;
     }
 
     private static async Task<Solution> OpenSolutionAsync(
@@ -49,4 +72,11 @@ public sealed class SolutionSourceLoader
 
 public sealed record SolutionLoadResult(
     IReadOnlyList<ProjectLoadResult> Projects,
+    IReadOnlyList<SolutionSourceDocument> Documents,
     IReadOnlyList<ProjectDiagnostic> Diagnostics);
+
+public sealed record SolutionSourceDocument(
+    string Path,
+    SyntaxTree SyntaxTree,
+    Compilation Compilation,
+    string ProjectName);
